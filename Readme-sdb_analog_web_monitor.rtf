@@ -1,0 +1,226 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1033{\fonttbl{\f0\fnil\fcharset0 Courier New;}}
+{\*\generator Riched20 10.0.17134}\viewkind4\uc1 
+\pard\qr\f0\fs22 April 2, 2019\par
+
+\pard\par
+
+\pard\qc\b\fs24 Basic analog monitoring web server for ESP32\b0\par
+\fs22 Scott Burton\par
+sdburton90@gmail.com \par
+\par
+
+\pard\b\fs24 Background:\par
+\b0\fs22 This is an ESP32 web-based monitor and control for multiple digital outputs along with an analog input for sensing light intensity.\par
+\par
+\b\fs24 Electrical Design:\par
+\b0\fs22 This design utilizes an ESP32 with 2 LED outputs configured on GPIO 16 and 17.  These outputs will support LED lignt output at 3 different levels of intensity. (Off, single and both LEDs 'on'.)  An analog input is configured on GPIO 36 attached to the junction of a general purpose photoresistor (LDR) acting as a variable level voltage divider in conjunction with an additional resistor. A simple diagram of these 3 ESP32 input/oupput circuits is shown below:\par
+ \par
+\par
+GPIO16 >---/\\/\\/\\/----]<-------------o GND.\par
+
+\pard             470      LED1\par
+\par
+GPIO17 >---/\\/\\/\\/----]<-------------o GND.\par
+
+\pard             470      LED2\par
+\par
+\par
+3V3  o------[ LDR ]----0----/\\/\\/\\/---o GND.  \par
+                       |     4.7K\par
+GPIO36 <---------------0\par
+\par
+\par
+In order for the photoresistor (LDR) to be effective, its photosensitive surface  needs to be in very close proximity to the LED light sources. Please see the related photo (ESP32-AnalogWebMonitor.jpg) to see the physical relationship between the key monitoring components.\par
+\par
+\b\fs24 Software Design: \par
+\b0\fs22 This software is provided as an Arduino .ino file. This is an experimental  web server based the ESP32 Random Nerd Turorial Lab-Module 4, by Rui Santos. (Very well done, and highly recommended training for starters on ESP32 development!) The web page provides 2 buttons to turn LED1 or 2 on and off using encoded URL requests. The web server responds to the different URLs with corresponding HIGH or LOW outputs to GPIO16 or 17. Prior to refreshing the page, the value of GPIO36 is read with  analogRead(GPIO#) and printed to the page as a value between 0 and 4095.\par
+\par
+\par
+ \par
+\par
+//\par
+//// Analog web monitor experiment based on Rui Santos code from randomnerds.com training module.  \par
+//\par
+// Load Wi-Fi library\par
+#include <WiFi.h>\par
+\par
+// Replace with your network credentials\par
+const char* ssid     = "Your-SSID";\par
+const char* password = "Your-Password";\par
+\par
+int webport = 80;\par
+\par
+// Set web server port number \par
+WiFiServer server(webport);\par
+\par
+// Variable to store the HTTP request\par
+String header;\par
+\par
+// Auxiliar variables to store the current output state\par
+String output16State = "off";\par
+String output17State = "off";\par
+\par
+// Assign input/output variables to GPIO pins\par
+const int output16 = 16;   // reeally using 16 and 17\par
+const int output17 = 17;\par
+const int optIn = 36;     // optical light sensor on 36\par
+int optValue = 0;\par
+\par
+void setup() \{\par
+  Serial.begin(115200);\par
+  // Initialize the output variables as outputs\par
+  pinMode(output16, OUTPUT);\par
+  pinMode(output17, OUTPUT);\par
+  pinMode(optIn, INPUT);\par
+  // Set outputs to LOW\par
+  digitalWrite(output16, LOW);\par
+  digitalWrite(output17, LOW);\par
+\par
+  // Connect to Wi-Fi network with SSID and password\par
+  Serial.print("Connecting to ");\par
+  Serial.println(ssid);\par
+  WiFi.begin(ssid, password);\par
+  while (WiFi.status() != WL_CONNECTED) \{\par
+    delay(500);\par
+    Serial.print(".");\par
+  \}\par
+  // Print local IP address and start web server\par
+  Serial.println("");\par
+  Serial.println("WiFi connected.");\par
+  Serial.println("IP address: ");\par
+  Serial.println(WiFi.localIP());\par
+  Serial.println("Port: " + String(webport) );\par
+  server.begin();\par
+\}\par
+\par
+void loop()\{\par
+  WiFiClient client = server.available();   // Listen for incoming clients\par
+\par
+  if (client) \{                             // If a new client connects,\par
+    Serial.println("New Client.");          // print a message out in the serial port\par
+    String currentLine = "";                // make a String to hold incoming data from the client\par
+    while (client.connected()) \{            // loop while the client's connected\par
+      if (client.available()) \{             // if there's bytes to read from the client,\par
+        char c = client.read();             // read a byte, then\par
+        Serial.write(c);                    // print it out the serial monitor\par
+        header += c;\par
+        if (c == '\\n') \{                    // if the byte is a newline character\par
+          if (currentLine.length() == 0) \{    // Blank line is end of header.\par
+            // checking if header is valid\par
+            // dXNlcjpwYXNz = 'user:pass' (user:pass) base64 encode\par
+            // Finding the right credential string, then loads web page\par
+            if(header.indexOf("dXNlcjpwYXNz")) \{   /** set to ("dXNlcjpwYXNz")>= 0 for authentication */\par
+              // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)\par
+              // and a content-type so the client knows what's coming, then a blank line:\par
+              client.println("HTTP/1.1 200 OK");\par
+              client.println("Content-type:text/html");\par
+              client.println("Connection: close");\par
+              client.println();\par
+              \par
+              // turns the GPIOs on and off\par
+              if (header.indexOf("GET /16/on") >= 0) \{\par
+                Serial.println("GPIO 16 on");\par
+                output16State = "on";\par
+                digitalWrite(output16, HIGH);\par
+              \} else if (header.indexOf("GET /16/off") >= 0) \{\par
+                Serial.println("GPIO 16 off");\par
+                output16State = "off";\par
+                digitalWrite(output16, LOW);\par
+              \} else if (header.indexOf("GET /17/on") >= 0) \{\par
+                Serial.println("GPIO 17 on");\par
+                output17State = "on";\par
+                digitalWrite(output17, HIGH);\par
+              \} else if (header.indexOf("GET /17/off") >= 0) \{\par
+                Serial.println("GPIO 17 off");\par
+                output17State = "off";\par
+                digitalWrite(output17, LOW);\par
+              \}\par
+              // Display the HTML web page\par
+              client.println("<!DOCTYPE html><html>");\par
+              client.println("<head><meta name=\\"viewport\\" content=\\"width=device-width, initial-scale=1\\">");\par
+              client.println("<link rel=\\"icon\\" href=\\"data:,\\">");\par
+              // CSS to style the on/off buttons \par
+              // Feel free to change the background-color and font-size attributes to fit your preferences\par
+              client.println("<style>html \{ font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;\}");\par
+              client.println(".button \{ background-color: #6CBF60; border: none; color: white; padding: 16px 40px;");\par
+              client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;\}");\par
+              client.println(".button2 \{background-color: #3C9F40;\}</style></head>");\par
+              \par
+              // Web Page Heading\par
+              client.println("<body><h1>Your ESP32 Web Server</h1>");\par
+              \par
+              // Display current state, and ON/OFF buttons for GPIO 16  \par
+              client.println("<p>GPIO 16 LED - State " + output16State + "</p>");\par
+              // If the output26State is off, it displays the ON button       \par
+              if (output16State=="off") \{\par
+                client.println("<p><a href=\\"/16/on\\"><button class=\\"button\\">Turn ON</button></a></p>");\par
+              \} else \{\par
+                client.println("<p><a href=\\"/16/off\\"><button class=\\"button button2\\">Turn OFF</button></a></p>");\par
+              \} \par
+                 \par
+              // Display current state, and ON/OFF buttons for GPIO 17  \par
+              client.println("<p>GPIO 17 LED - State " + output17State + "</p>");\par
+              // If the output17State is off, it displays the ON button       \par
+              if (output17State=="off") \{\par
+                client.println("<p><a href=\\"/17/on\\"><button class=\\"button\\">Turn ON</button></a></p>");\par
+              \} else \{\par
+                client.println("<p><a href=\\"/17/off\\"><button class=\\"button button2\\">Turn OFF</button></a></p>");\par
+              \}\par
+              // read the state of the opto sensor\par
+              delay(250);\par
+              optValue = analogRead(optIn);            \par
+              Serial.println("Light sensor value on GPIO" + String(optIn) + " is " + String(optValue));\par
+              \par
+              client.println("<p><br><b>Light sensor value on GPIO" + String(optIn) + " is " + String(optValue) + "</b></p>");\par
+              client.println("</body></html>");\par
+              \par
+              // The HTTP response ends with another blank line\par
+              client.println();\par
+              // Break out of the while loop\par
+              break;\par
+            \}\par
+            // Wrong user or password, so HTTP request fails...   \par
+            else \{            \par
+              client.println("HTTP/1.1 401 Unauthorized");\par
+              client.println("WWW-Authenticate: Basic realm=\\"Secure\\"");\par
+              client.println("Content-Type: text/html");\par
+              client.println();\par
+              client.println("<html>Authentication failed</html>");\par
+            \}   \par
+          \} else \{ // if you got a newline, then clear currentLine\par
+            currentLine = "";\par
+          \}\par
+        \} else if (c != '\\r') \{  // if you got anything else but a carriage return character,\par
+          currentLine += c;      // add it to the end of the currentLine\par
+        \}\par
+      \}\par
+    \}\par
+    // Clear the header variable\par
+    header = "";\par
+    // Close the connection\par
+    client.stop();\par
+    Serial.println("Client disconnected.");\par
+    Serial.println("");\par
+  \}\par
+\}\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+\par
+ \par
+}
+ 
